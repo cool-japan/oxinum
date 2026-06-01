@@ -1,0 +1,22 @@
+[package]
+name = "oxinum-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core traits and error types for OxiNum"
+categories = ["mathematics", "algorithms"]
+keywords = ["bignum", "arbitrary-precision", "pure-rust", "cooljapan", "oxinum"]
+
+[dependencies]
+dashu-base = { workspace = true }
+serde      = { workspace = true, optional = true }
+
+[features]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+proptest   = { workspace = true }
+serde_json = { workspace = true }

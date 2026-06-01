@@ -1,0 +1,54 @@
+[package]
+name = "oxinum-int"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Arbitrary-precision integers for OxiNum (UBig/IBig via dashu-int)"
+categories = ["mathematics", "algorithms"]
+keywords = ["bignum", "arbitrary-precision", "integer", "cooljapan", "oxinum"]
+
+[features]
+default = []
+serde = ["dep:serde", "oxinum-core/serde"]
+num-traits = ["dep:num-traits"]
+rand = ["dep:rand"]
+
+[dependencies]
+oxinum-core = { workspace = true }
+dashu-int   = { workspace = true }
+dashu-base  = { workspace = true }
+serde       = { workspace = true, optional = true }
+num-traits  = { workspace = true, optional = true }
+rand        = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest   = { workspace = true }
+serde_json = { workspace = true }
+criterion  = { workspace = true }
+
+[[bench]]
+name = "mul"
+harness = false
+
+[[bench]]
+name = "div"
+harness = false
+
+[[bench]]
+name = "factorial"
+harness = false
+
+[[bench]]
+name = "primality"
+harness = false
+
+[[bench]]
+name = "gcd"
+harness = false
+
+[[bench]]
+name = "modexp"
+harness = false

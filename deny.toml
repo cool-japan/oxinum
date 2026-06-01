@@ -1,0 +1,21 @@
+[advisories]
+ignore = []
+
+[licenses]
+allow = ["Apache-2.0", "MIT", "ISC", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause"]
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+deny = [
+    { name = "rug" },
+    { name = "gmp-mpfr-sys" },
+    { name = "gmp-sys" },
+    { name = "mpfr-sys" },
+    { name = "gmp-mpfr" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

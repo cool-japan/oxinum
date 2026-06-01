@@ -1,0 +1,7 @@
+# Conservative proptest defaults for OxiNum.
+# Tests that legitimately need more cases can override locally via
+#   proptest! { #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })] ... }
+# (proptest reads this file from the workspace root at runtime.)
+
+cases = 64
+verbose = 0

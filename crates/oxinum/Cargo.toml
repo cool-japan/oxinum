@@ -1,0 +1,33 @@
+[package]
+name = "oxinum"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "OxiNum — Pure-Rust arbitrary-precision math (GMP/MPFR-free via dashu)"
+categories = ["mathematics", "algorithms"]
+keywords = ["bignum", "arbitrary-precision", "pure-rust", "cooljapan", "oxinum"]
+
+[features]
+default = ["pure"]
+pure = []
+macros = ["dep:dashu-macros"]
+
+[dependencies]
+oxinum-core     = { workspace = true }
+oxinum-int      = { workspace = true }
+oxinum-float    = { workspace = true }
+oxinum-rational = { workspace = true }
+dashu-macros    = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest     = { workspace = true }
+criterion    = { workspace = true }
+num-bigint   = "0.4.6"
+num-traits   = { workspace = true }
+
+[[bench]]
+name = "vs_num_bigint"
+harness = false

@@ -1,0 +1,39 @@
+[package]
+name = "oxinum-float"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Arbitrary-precision floats for OxiNum (FBig/DBig via dashu-float)"
+categories = ["mathematics", "algorithms"]
+keywords = ["bignum", "arbitrary-precision", "float", "cooljapan", "oxinum"]
+
+[features]
+default = []
+serde = ["dep:serde", "dashu-float/serde", "oxinum-int/serde"]
+num-traits = ["dep:num-traits"]
+
+[dependencies]
+oxinum-core = { workspace = true }
+oxinum-int  = { workspace = true }
+dashu-float = { workspace = true }
+dashu-base  = { workspace = true }
+serde       = { workspace = true, optional = true }
+num-traits  = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest        = { workspace = true }
+serde_json      = { workspace = true }
+criterion       = { workspace = true }
+# oxinum-rational temporarily removed for publish (circular dev-dep); restore after oxinum-rational is published
+num-traits       = { workspace = true }
+
+[[bench]]
+name = "constants"
+harness = false
+
+[[bench]]
+name = "transcendentals"
+harness = false
