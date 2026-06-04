@@ -20,6 +20,7 @@ oxinum-core     = { workspace = true }
 oxinum-int      = { workspace = true }
 oxinum-float    = { workspace = true }
 oxinum-rational = { workspace = true }
+oxinum-complex  = { workspace = true }
 dashu-macros    = { workspace = true, optional = true }
 
 [dev-dependencies]

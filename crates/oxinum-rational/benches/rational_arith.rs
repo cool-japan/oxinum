@@ -1,4 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use dashu_int::{IBig, UBig};
+use dashu_ratio::RBig;
 use oxinum_int::native::{BigInt, BigUint};
 use oxinum_rational::native::BigRational;
 
@@ -62,10 +64,64 @@ fn bench_rational_3x3_determinant(c: &mut Criterion) {
     group.finish();
 }
 
+// NOTE: dashu-ratio (RBig) does NOT expose a continued_fraction() method.
+// This baseline covers only arithmetic operations (add, mul) where a
+// comparison with the oxinum native BigRational is meaningful.
+// CF allocation profiling is in benches/alloc_profile.rs (native only).
+fn bench_rational_vs_dashu(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rational_vs_dashu");
+
+    // Pairs used for both addition and multiplication chains.
+    let pairs: &[(i64, u64)] = &[(355, 113), (22, 7), (1457, 991), (720720, 360360)];
+
+    // --- Addition ---
+    group.bench_function("oxinum_add_chain", |b| {
+        b.iter(|| {
+            let mut acc = make_rat(0, 1);
+            for &(n, d) in pairs {
+                acc = &acc + &make_rat(n, d);
+            }
+            acc
+        })
+    });
+    group.bench_function("dashu_add_chain", |b| {
+        b.iter(|| {
+            let mut acc = RBig::ZERO;
+            for &(n, d) in pairs {
+                acc = &acc + &RBig::from_parts(IBig::from(n), UBig::from(d));
+            }
+            acc
+        })
+    });
+
+    // --- Multiplication ---
+    group.bench_function("oxinum_mul_chain", |b| {
+        b.iter(|| {
+            let mut acc = make_rat(1, 1);
+            for &(n, d) in pairs {
+                acc = &acc * &make_rat(n, d);
+            }
+            acc
+        })
+    });
+    group.bench_function("dashu_mul_chain", |b| {
+        b.iter(|| {
+            let mut acc = RBig::ONE;
+            for &(n, d) in pairs {
+                acc = &acc * &RBig::from_parts(IBig::from(n), UBig::from(d));
+            }
+            acc
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_rational_gcd_reduction,
     bench_rational_arithmetic_chain,
-    bench_rational_3x3_determinant
+    bench_rational_3x3_determinant,
+    bench_rational_vs_dashu
 );
 criterion_main!(benches);

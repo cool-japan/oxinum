@@ -26,6 +26,7 @@
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 
 use oxinum_core::{OxiNumError, OxiNumResult, Sign};
+use oxinum_int::native::divrem;
 
 use super::float::{BigFloat, RoundingMode};
 use super::nonfinite::{nonfinite_binop, nonfinite_propagate, BinOp};
@@ -79,9 +80,23 @@ impl BigFloat {
         // Shift m_a left by `target_prec + guard` bits, then floor-divide
         // by m_b. The quotient carries enough bits for from_parts to round
         // back to `target_prec` correctly.
+        //
+        // CORRECTLY-ROUNDED DIVISION: we must also carry the division remainder
+        // into the sticky bit. Without this, if the low guard bits of the
+        // quotient happen to be zero but the remainder is nonzero, the
+        // round_drop_low_bits pass would compute sticky=false and round wrong
+        // (off by 1 ULP). Setting bit 0 of the quotient when remainder≠0
+        // is safe because DIV_GUARD_BITS >= 2, so bit 0 is strictly below the
+        // round bit and only affects the sticky bits.
         let shift_bits = (target_prec + DIV_GUARD_BITS) as u64;
         let scaled = self.mantissa.shl_bits(shift_bits);
-        let quotient = &scaled / &other.mantissa;
+        let (mut quotient, remainder) = divrem(&scaled, &other.mantissa);
+        if !remainder.is_zero() {
+            // Ensure the sticky bit is set so that round_drop_low_bits can
+            // correctly round toward nearest-even when the true quotient is
+            // not an exact multiple of 2^(−shift_bits).
+            quotient.set_bit(0);
+        }
         // Exponent of the bare integer quotient.
         // value = quotient * 2^(e_a - e_b - shift_bits)
         let exp_after_div = self

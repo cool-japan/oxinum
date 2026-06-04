@@ -96,12 +96,18 @@ impl BigFloat {
             )
         };
 
-        // --- Taylor series sum ---
+        // --- Taylor / binary-splitting series sum ---
         // e^y = Σ_{n=0}^{N} y^n / n!
         // After reduction, |y| <= 2^{-(prec/64 + 4)}.
-        // Number of terms: N = max(64, prec / 4 + 16) to ensure full precision.
+        // Above BS_THRESHOLD_BITS bits, use the binary-splitting engine which
+        // achieves O(M(N) log N) rather than the O(N²) iterative path.
+        // Number of iterative terms: N = max(64, prec / 4 + 16).
         let n_terms = (prec / 4 + 16).max(64) as u64;
-        let mut result = exp_taylor(&x_reduced, n_terms, work_prec, mode)?;
+        let mut result = if prec >= super::bs_transcendental::BS_THRESHOLD_BITS {
+            super::bs_transcendental::exp_bs(&x_reduced, work_prec, mode)?
+        } else {
+            exp_taylor(&x_reduced, n_terms, work_prec, mode)?
+        };
 
         // --- Square back k times ---
         // e^x = (e^(x/2^k))^(2^k) = result^(2^k)

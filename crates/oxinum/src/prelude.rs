@@ -27,8 +27,11 @@ pub use oxinum_rational::{
     rational_abs, rational_reciprocal, to_decimal_string, BigRational, RBig, Relaxed,
 };
 
+// Complex types
+pub use oxinum_complex::CBig;
+
 // Top-level type aliases
-pub use crate::{Float, Int, Natural, Rational};
+pub use crate::{Complex, Float, Int, Natural, Rational};
 
 // Constants and conversions as modules
 pub use crate::constants;

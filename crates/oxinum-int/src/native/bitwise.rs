@@ -40,7 +40,7 @@
 
 use super::int::BigInt;
 use super::uint::BigUint;
-use core::ops::{BitAnd, BitOr, BitXor, Not, Shl, Shr};
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 use oxinum_core::Sign;
 
 // ---------------------------------------------------------------------------
@@ -553,5 +553,227 @@ mod tests {
         // Ensure the bu() helper doesn't trigger unused-function warnings by
         // using it in at least one test.
         assert_eq!(bu(42), BigUint::from_u64(42));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BitAndAssign / BitOrAssign / BitXorAssign for native::BigUint
+//
+// The core BitAnd/BitOr/BitXor impls (4 ref-combinations each) live in
+// `uint.rs` and are wired to call `simd_ops` kernels.  Here we add only the
+// assign variants, keeping bitwise-op code grouped in this file.
+// ---------------------------------------------------------------------------
+
+impl BitAndAssign<BigUint> for BigUint {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: BigUint) {
+        *self = &*self & &rhs;
+    }
+}
+
+impl BitAndAssign<&BigUint> for BigUint {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: &BigUint) {
+        *self = &*self & rhs;
+    }
+}
+
+impl BitOrAssign<BigUint> for BigUint {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: BigUint) {
+        *self = &*self | &rhs;
+    }
+}
+
+impl BitOrAssign<&BigUint> for BigUint {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: &BigUint) {
+        *self = &*self | rhs;
+    }
+}
+
+impl BitXorAssign<BigUint> for BigUint {
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: BigUint) {
+        *self = &*self ^ &rhs;
+    }
+}
+
+impl BitXorAssign<&BigUint> for BigUint {
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: &BigUint) {
+        *self = &*self ^ rhs;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for BigUint bitwise ops
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod biguint_bitwise_tests {
+    use super::*;
+
+    fn bu(v: u64) -> BigUint {
+        BigUint::from_u64(v)
+    }
+
+    // ------- AND -------
+
+    #[test]
+    fn and_basic() {
+        assert_eq!(&bu(0b1100) & &bu(0b1010), bu(0b1000));
+        assert_eq!(&bu(0xFF) & &bu(0x0F), bu(0x0F));
+        assert_eq!(&bu(0) & &bu(0xFF), bu(0));
+    }
+
+    #[test]
+    fn and_zero_identity() {
+        let x = bu(0xDEAD_BEEF);
+        assert_eq!(&x & &bu(0), bu(0), "a & 0 == 0");
+    }
+
+    #[test]
+    fn and_self_identity() {
+        let x = bu(0xDEAD_BEEF);
+        assert_eq!(&x & &x, x.clone(), "a & a == a");
+    }
+
+    #[test]
+    fn and_unequal_limbs() {
+        // a has 2 limbs, b has 1 limb: result should only be 1 limb (the AND of
+        // the overlap; higher limbs of a vanish because AND with 0 is 0).
+        let mut limbs_a = vec![0xFFFF_FFFF_FFFF_FFFFu64, 0xFFFF_FFFF_FFFF_FFFFu64];
+        let limbs_b = vec![0xAAAA_AAAA_AAAA_AAAAu64];
+        let a = BigUint::from_le_limbs(&limbs_a);
+        let b = BigUint::from_le_limbs(&limbs_b);
+        let result = &a & &b;
+        assert_eq!(result, BigUint::from_le_limbs(&limbs_b));
+        // Confirm normalization: a & 0 in higher limbs yields no trailing zeros
+        limbs_a[1] = 0;
+        let a2 = BigUint::from_le_limbs(&limbs_a);
+        let result2 = &a2 & &b;
+        assert_eq!(result2, BigUint::from_le_limbs(&limbs_b));
+    }
+
+    #[test]
+    fn and_assign() {
+        let mut x = bu(0b1111);
+        x &= bu(0b1010);
+        assert_eq!(x, bu(0b1010));
+    }
+
+    // ------- OR -------
+
+    #[test]
+    fn or_basic() {
+        assert_eq!(&bu(0b1100) | &bu(0b1010), bu(0b1110));
+        assert_eq!(&bu(0xF0) | &bu(0x0F), bu(0xFF));
+    }
+
+    #[test]
+    fn or_zero_identity() {
+        let x = bu(0xDEAD_BEEF);
+        assert_eq!(&x | &bu(0), x.clone(), "a | 0 == a");
+    }
+
+    #[test]
+    fn or_self_identity() {
+        let x = bu(0xDEAD_BEEF);
+        assert_eq!(&x | &x, x.clone(), "a | a == a");
+    }
+
+    #[test]
+    fn or_unequal_limbs() {
+        let limbs_a = vec![0x1111_1111_1111_1111u64, 0x2222_2222_2222_2222u64];
+        let limbs_b = vec![0x4444_4444_4444_4444u64];
+        let a = BigUint::from_le_limbs(&limbs_a);
+        let b = BigUint::from_le_limbs(&limbs_b);
+        let result = &a | &b;
+        // Lower limb: OR, upper limb: preserved from a
+        let expected = BigUint::from_le_limbs(&[
+            0x1111_1111_1111_1111u64 | 0x4444_4444_4444_4444u64,
+            0x2222_2222_2222_2222u64,
+        ]);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn or_assign() {
+        let mut x = bu(0b1010);
+        x |= bu(0b0101);
+        assert_eq!(x, bu(0b1111));
+    }
+
+    // ------- XOR -------
+
+    #[test]
+    fn xor_basic() {
+        assert_eq!(&bu(0b1100) ^ &bu(0b1010), bu(0b0110));
+        assert_eq!(&bu(0xFF) ^ &bu(0x0F), bu(0xF0));
+    }
+
+    #[test]
+    fn xor_self_is_zero() {
+        let x = bu(0xDEAD_BEEF_CAFE_BABEu64);
+        assert_eq!(&x ^ &x, bu(0), "a ^ a == 0");
+    }
+
+    #[test]
+    fn xor_zero_identity() {
+        let x = bu(0xDEAD_BEEF);
+        assert_eq!(&x ^ &bu(0), x.clone(), "a ^ 0 == a");
+    }
+
+    #[test]
+    fn xor_unequal_limbs() {
+        let limbs_a = vec![0xFFFF_FFFF_FFFF_FFFFu64, 0xFFFF_FFFF_FFFF_FFFFu64];
+        let limbs_b = vec![0xFFFF_FFFF_FFFF_FFFFu64];
+        let a = BigUint::from_le_limbs(&limbs_a);
+        let b = BigUint::from_le_limbs(&limbs_b);
+        let result = &a ^ &b;
+        // Lower limb XOR cancels to 0; upper limb is 0xFFFF... ^ 0 = 0xFFFF...
+        let expected = BigUint::from_le_limbs(&[0u64, 0xFFFF_FFFF_FFFF_FFFFu64]);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn xor_double_is_identity() {
+        // a ^ b ^ b == a
+        let a = BigUint::from_le_limbs(&[0xDEAD_BEEF, 0xCAFE_BABE, 0x1234_5678]);
+        let b = BigUint::from_le_limbs(&[0x1111_2222, 0x3333_4444]);
+        let c = &(&a ^ &b) ^ &b;
+        assert_eq!(c, a);
+    }
+
+    #[test]
+    fn xor_normalization() {
+        // XOR of equal numbers must normalize to zero (empty limbs).
+        let big = BigUint::from_le_limbs(&[
+            0xAAAA_BBBB_CCCC_DDDDu64,
+            0xEEEE_FFFF_0000_1111u64,
+            0x2222_3333_4444_5555u64,
+        ]);
+        let result: BigUint = &big ^ &big;
+        assert_eq!(result, BigUint::zero());
+        assert!(result.is_zero());
+    }
+
+    #[test]
+    fn xor_assign() {
+        let mut x = bu(0b1111);
+        x ^= bu(0b1010);
+        assert_eq!(x, bu(0b0101));
+    }
+
+    // ------- owned variants compile and produce correct results -------
+
+    #[test]
+    fn owned_ops() {
+        let a = bu(0b1110);
+        let b = bu(0b1011);
+        assert_eq!(a.clone() & b.clone(), bu(0b1010));
+        assert_eq!(a.clone() | b.clone(), bu(0b1111));
+        assert_eq!(a.clone() ^ b.clone(), bu(0b0101));
     }
 }

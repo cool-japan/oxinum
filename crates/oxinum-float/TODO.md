@@ -124,9 +124,21 @@ Enriched facade over `dashu-float`. Re-exports `FBig`/`DBig`/`Context` and round
 ## Performance
 - [x] Benchmark AGM-based ln vs Taylor series for various precisions
 - [x] Benchmark Chudnovsky pi vs Machin-like formulas (Chudnovsky IS the implementation used in pi(); bench_pi covers 100/500/1000-bit (prec ≈ 30/150/301 decimal digits) precisions side-by-side with e_const and ln2 in constants.rs; 3322-bit case ≈ 1000 decimal digits added)
-- [ ] Profile allocation patterns in exp/sin/cos computation chains
+- [x] Profile allocation patterns in exp/sin/cos computation chains (planned 2026-06-03)
+  - **Goal:** A report bench (`benches/alloc_profile.rs`, `harness=false`, plain `fn main`) that counts allocations in native `BigFloat::{exp,sin,cos}` at precisions {64,256,1024} bits and a chained `exp(sin(cos(x)))`, printing every `AllocStats` field.
+  - **Design:** file-local `CountingAlloc` `#[global_allocator]` in the bench binary (legal because bench binaries do NOT inherit the library's `#![forbid(unsafe_code)]`). Atomics track alloc/dealloc calls, cumulative bytes, live bytes, peak bytes; helpers `reset()/snapshot()/measure(||…)`. Exercises native `BigFloat` hot paths directly.
+  - **Files:** new `crates/oxinum-float/benches/alloc_profile.rs`; add `[[bench]] name="alloc_profile" harness=false` to `crates/oxinum-float/Cargo.toml`. No new external dep (dashu-float already a normal dep).
+  - **Prerequisites:** none.
+  - **Tests:** bench compiles (`cargo bench -p oxinum-float --no-run`) and the alloc_profile binary runs and prints a report.
+  - **Risk:** `unsafe impl GlobalAlloc` is clean under `-D warnings`; print all fields → no dead_code.
 - [x] Benchmark against dashu-float for equivalent operations (BM1 already covered pi/exp/ln at prec 1000 with native vs dashu)
-- [ ] Consider binary splitting parallelization for constant computation
+- [x] Consider binary splitting parallelization for constant computation (planned 2026-06-03)
+  - **Goal:** Native `BigFloat::{exp,sin,cos}` gain a binary-splitting evaluation path used above `BS_THRESHOLD_BITS = 512` bits, keeping the existing iterative Taylor path below it. Optional off-by-default `parallel` feature parallelizes the split recursion via `rayon::join` with bit-identical results.
+  - **Design:** The existing engine in `binary_splitting.rs` (`BSSplit`, `binary_split`, `BSSeries`) is reused; only three new `BSSeries` impls + entry helpers are needed. Term functions (all with `b_k=1, a_k=1`, sign folded into `p_k`): exp k=0→(1,1,1,1), k≥1→(p,q·k,1,1); sin k=0→(p,q,1,1), k≥1→(−p²,q²·(2k)(2k+1),1,1); cos k=0→(1,1,1,1), k≥1→(−p²,q²·(2k−1)(2k),1,1). Reduced arg extracted losslessly from BigFloat mantissa+exponent. Reconstruction via `div_ref_with_mode` (never the panicking `/`). Threshold dispatch in `float_exp.rs`/`trig.rs`. Optional `parallel = ["dep:rayon"]` feature with gated `rayon::join` variant (rayon is Pure Rust). Also adds dashu exp/ln baseline group to `benches/transcendentals.rs` (dashu has no sin/cos — documented).
+  - **Files:** new `crates/oxinum-float/src/native/bs_transcendental.rs`; modify `float_exp.rs`, `trig.rs`, `binary_splitting.rs`, `native/mod.rs`, `Cargo.toml`; edit `benches/transcendentals.rs`.
+  - **Prerequisites:** none — engine, reduction, squaring, quadrant table all exist.
+  - **Tests:** BS-vs-iterative cross-validation at prec in {128,256,511,512,600,1024}; known values (exp(1)=e, sin(π/6)=½, etc.); threshold-boundary agreement; per-term unit assertions; proptests; parallel determinism test.
+  - **Risk:** sign/branch errors in sin/cos terms (mitigation: per-term unit assertions + cross-validation against iterative oracle). Decimal DBig path out of scope (dashu-backed, untouched).
 
 ## Integration
 - [x] Implement BigFloat pow/log_base + BigRational↔BigFloat conversion at specified precision (planned 2026-05-29)
@@ -137,6 +149,7 @@ Enriched facade over `dashu-float`. Re-exports `FBig`/`DBig`/`Context` and round
   - **Prerequisites:** T2 (exp + ln), N4a/N4b.
   - **Tests:** `pow(2,10)==1024`; `pow(x,0)==1`; `pow(x,y)*pow(x,-y)≈1`; `log_base(100,10)≈2`; rational↔float round-trip; `float_to_rational(1.5)==3/2`.
   - **Risk:** `pow(0,0)` convention documented explicitly.
-- [ ] Verify compatibility with SciRS2 floating-point needs (matrix decomposition, optimization)
+- [x] Verify compatibility with SciRS2 floating-point needs (matrix decomposition, optimization) (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_float_compat.rs` — 24 tests proving `DBig`, `compute_pi/e/ln2`, `sqrt/exp/ln/pow`, all trig functions, `atan2`, hyperbolics, and `precision::with_precision` match the SciRS2 call surface; includes the `asin`-via-`atan` composition path and the `f64_to_dbig` round-trip path.
 - [x] Provide re-export path through oxinum facade crate
 - [x] Ensure Context type works with oxinum facade's round module

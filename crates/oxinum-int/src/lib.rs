@@ -1,3 +1,4 @@
+#![cfg_attr(oxinum_simd, feature(portable_simd))]
 #![forbid(unsafe_code)]
 //! Arbitrary-precision integer arithmetic for the OxiNum ecosystem.
 //!

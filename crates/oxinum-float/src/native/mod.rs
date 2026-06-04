@@ -47,6 +47,7 @@
 
 mod atan;
 pub mod binary_splitting;
+mod bs_transcendental;
 mod constants;
 mod context;
 mod core_traits;

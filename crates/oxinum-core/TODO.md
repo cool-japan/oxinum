@@ -50,5 +50,6 @@ Foundation layer: `OxiNumError` enum (Parse/Precision/DivByZero/Overflow/Invalid
 
 ## Integration
 - [x] Ensure all numeric crates (oxinum-int, oxinum-float, oxinum-rational) use traits from oxinum-core
-- [ ] Verify that trait hierarchy is compatible with SciRS2 numeric requirements
+- [x] Verify that trait hierarchy is compatible with SciRS2 numeric requirements (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_trait_hierarchy_compat.rs` — proves `Abs`/`Signed`/`Sign` re-exports work correctly with `IBig` as used by SciRS2's `ArbitraryInt::signum()` and `abs()` helper; `OxiNumError` is `Send+Sync`; all 8 `RoundingMode` variants present.
 - [x] Ensure error types are compatible with thiserror derive in downstream crates (OxiNumError implements std::error::Error; verified by oxinumerror_implements_std_error test: assert_error<E: std::error::Error>() + Box<dyn std::error::Error>)

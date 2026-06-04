@@ -42,6 +42,9 @@ Facade crate re-exporting integer/float/rational types, number-theory and elemen
 - [x] Compare performance against num-bigint + num-rational for common operations
 
 ## Integration
-- [ ] Ensure SciRS2 can depend solely on oxinum for all numeric needs
+- [x] Ensure SciRS2 can depend solely on oxinum for all numeric needs (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_facade_compat.rs` mod `scirs2_sole_dep` — proves `oxinum::IBig/UBig/Float/Rational/OxiNumError`, `oxinum::native::*`, `oxinum::constants::*`, `oxinum::is_prime/factorial/Gcd` are all accessible through the facade crate; 7 tests.
 - [ ] Ensure OxiBLAS can use oxinum for arbitrary-precision matrix entries
-- [ ] Verify oxinum works as drop-in for projects currently using dashu directly
+  - **Blocked (2026-06-03):** OxiBLAS has no `oxinum` dependency. Requires OxiBLAS team to add optional `arbitrary-precision` feature with oxinum dep + `ArbitraryMatrix<T: OxiNum>` design. Cross-project coordination needed.
+- [x] Verify oxinum works as drop-in for projects currently using dashu directly (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_facade_compat.rs` mod `dashu_drop_in` — proves IBig/UBig arithmetic, DBig string parsing, RBig from_parts, Gcd trait, and Sign comparison all work identically via oxinum re-exports vs direct dashu usage; 7 tests.

@@ -8,7 +8,7 @@
 #![cfg(feature = "pure")]
 
 use oxinum::native;
-use oxinum::native::{BigFloat, BigInt, BigRational, BigUint, RoundingMode};
+use oxinum::native::{BigComplex, BigFloat, BigInt, BigRational, BigUint, RoundingMode};
 
 #[test]
 fn native_biguint_resolves() {
@@ -37,11 +37,25 @@ fn native_bigfloat_resolves() {
 }
 
 #[test]
+fn native_bigcomplex_resolves() {
+    // BigComplex::new(re, im) over native BigFloat.
+    let re = BigFloat::from_i64(3_i64, 64, RoundingMode::HalfEven);
+    let im = BigFloat::from_i64(4_i64, 64, RoundingMode::HalfEven);
+    let z = BigComplex::new(re, im);
+    // |3 + 4i|^2 = 25.
+    assert_eq!(z.norm_sqr().to_f64(), 25.0);
+}
+
+#[test]
 fn native_aliases_resolve() {
     let _: native::Int = native::Int::from(1_i64);
     let _: native::Natural = native::Natural::from(2_u64);
     let _: native::Float = native::Float::from_i64(3_i64, 30, RoundingMode::HalfEven);
     let _: native::Rational = native::Rational::from_integer(BigInt::from(4_i64));
+    let _: native::Complex = native::Complex::new(
+        native::Float::from_i64(5_i64, 30, RoundingMode::HalfEven),
+        native::Float::from_i64(6_i64, 30, RoundingMode::HalfEven),
+    );
 }
 
 #[test]

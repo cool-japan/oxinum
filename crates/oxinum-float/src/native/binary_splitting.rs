@@ -89,6 +89,28 @@ pub trait BSSeries {
 // Core engine
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Combine helper (shared between serial and parallel implementations)
+// ---------------------------------------------------------------------------
+
+/// Combine two adjacent binary-split sub-results into one.
+///
+/// The algebraic identity is:
+/// ```text
+/// p  = p_L · p_R
+/// q  = q_L · q_R
+/// b  = b_L · b_R
+/// t  = t_L · q_R · b_R  +  t_R · p_L
+/// ```
+#[inline]
+fn combine(l: BSSplit, r: BSSplit) -> BSSplit {
+    let p = &l.p * &r.p;
+    let q = &l.q * &r.q;
+    let b = &l.b * &r.b;
+    let t = &l.t * &r.q * &r.b + &r.t * &l.p;
+    BSSplit { p, q, b, t }
+}
+
 /// Evaluate `Σ_{k=lo}^{hi-1}` using binary splitting.
 ///
 /// `hi` must be strictly greater than `lo`.
@@ -96,6 +118,7 @@ pub trait BSSeries {
 /// # Panics
 ///
 /// Panics if `hi <= lo`.
+#[cfg(not(feature = "parallel"))]
 pub fn binary_split<S: BSSeries>(series: &S, lo: u64, hi: u64) -> BSSplit {
     assert!(hi > lo, "binary_split: hi ({hi}) must be > lo ({lo})");
 
@@ -109,19 +132,48 @@ pub fn binary_split<S: BSSeries>(series: &S, lo: u64, hi: u64) -> BSSplit {
     let mid = lo + (hi - lo) / 2;
     let l = binary_split(series, lo, mid);
     let r = binary_split(series, mid, hi);
-
-    // Combine:
-    //   p = p_L · p_R
-    //   q = q_L · q_R
-    //   b = b_L · b_R
-    //   t = t_L · q_R · b_R  +  t_R · p_L
-    let p = &l.p * &r.p;
-    let q = &l.q * &r.q;
-    let b = &l.b * &r.b;
-    let t = &l.t * &r.q * &r.b + &r.t * &l.p;
-
-    BSSplit { p, q, b, t }
+    combine(l, r)
 }
+
+/// Minimum sub-problem size for parallel recursion.
+#[cfg(feature = "parallel")]
+const BS_PARALLEL_MIN: u64 = 64;
+
+/// Evaluate `Σ_{k=lo}^{hi-1}` using binary splitting with optional `rayon`
+/// parallelism (enabled by the `parallel` feature).
+///
+/// When `hi - lo >= BS_PARALLEL_MIN`, the two halves are computed in parallel
+/// via `rayon::join`.  Smaller sub-problems fall back to sequential recursion.
+///
+/// The `Sync` bound is required so `series` can be shared across threads.
+///
+/// # Panics
+///
+/// Panics if `hi <= lo`.
+#[cfg(feature = "parallel")]
+pub fn binary_split<S: BSSeries + Sync>(series: &S, lo: u64, hi: u64) -> BSSplit {
+    assert!(hi > lo, "binary_split: hi ({hi}) must be > lo ({lo})");
+
+    if hi == lo + 1 {
+        let (p, q, b, a) = series.term(lo);
+        let t = &a * &p;
+        return BSSplit { p, q, b, t };
+    }
+
+    let mid = lo + (hi - lo) / 2;
+    let (l, r) = if hi - lo >= BS_PARALLEL_MIN {
+        rayon::join(
+            || binary_split(series, lo, mid),
+            || binary_split(series, mid, hi),
+        )
+    } else {
+        (binary_split(series, lo, mid), binary_split(series, mid, hi))
+    };
+    combine(l, r)
+}
+
+#[cfg(feature = "parallel")]
+use rayon;
 
 // ---------------------------------------------------------------------------
 // Unit tests for the combining rule

@@ -92,17 +92,26 @@ pub fn atan(x: &DBig, precision: usize) -> OxiNumResult<DBig> {
         return Ok(zero);
     }
 
-    let guard_prec = precision + 15;
-    let one = make_dbig("1.0")?;
-    let neg_one = make_dbig("-1.0")?;
+    let guard_prec = precision + 20;
+    let one = dbig_at_precision("1.0", guard_prec);
+    let neg_one = dbig_at_precision("-1.0", guard_prec);
 
-    let is_negative = *x < zero;
-    let abs_x = if is_negative { x * &neg_one } else { x.clone() };
+    // Carry guard digits on the argument before any division/multiplication so
+    // that low-precision inputs (e.g. a `y/x` ratio with only a few significant
+    // digits) do not collapse intermediate arithmetic to that narrow precision.
+    let x_ext = extend_precision(x, guard_prec);
+
+    let is_negative = x_ext < zero;
+    let abs_x = if is_negative {
+        &x_ext * &neg_one
+    } else {
+        x_ext.clone()
+    };
 
     let result = if abs_x > one {
         // atan(x) = pi/2 - atan(1/x) for x > 0
         let pi = compute_pi(guard_prec);
-        let half_pi = &pi / &make_dbig("2.0")?;
+        let half_pi = &pi / &dbig_at_precision("2.0", guard_prec);
         let recip = &one / &abs_x;
         let atan_recip = atan_small(&recip, guard_prec);
         &half_pi - &atan_recip
@@ -125,18 +134,24 @@ pub fn atan(x: &DBig, precision: usize) -> OxiNumResult<DBig> {
 pub fn atan2(y: &DBig, x: &DBig, precision: usize) -> OxiNumResult<DBig> {
     validate_precision(precision)?;
     let zero = make_dbig("0.0")?;
-    let guard_prec = precision + 10;
+    let guard_prec = precision + 20;
     let pi = compute_pi(guard_prec);
 
+    // Carry guard digits on both operands before forming the ratio, otherwise a
+    // division of low-precision literals (e.g. `2.0 / 3.0`) rounds to only a few
+    // significant digits and corrupts the downstream `atan` series.
+    let y_ext = extend_precision(y, guard_prec);
+    let x_ext = extend_precision(x, guard_prec);
+
     if *x > zero {
-        let ratio = y / x;
+        let ratio = &y_ext / &x_ext;
         atan(&ratio, precision)
     } else if *x < zero && *y >= zero {
-        let ratio = y / x;
+        let ratio = &y_ext / &x_ext;
         let a = atan(&ratio, guard_prec)?;
         Ok(truncate_to_precision(&a + &pi, precision))
     } else if *x < zero && *y < zero {
-        let ratio = y / x;
+        let ratio = &y_ext / &x_ext;
         let a = atan(&ratio, guard_prec)?;
         Ok(truncate_to_precision(&a - &pi, precision))
     } else if *x == zero && *y > zero {
@@ -254,11 +269,17 @@ fn cos_taylor(x: &DBig, precision: usize) -> DBig {
 ///   atan(x) = 2 * atan(x / (1 + sqrt(1 + x^2)))
 /// which reduces the argument closer to 0.
 fn atan_small(x: &DBig, precision: usize) -> DBig {
-    // Reduce argument: apply halving a few times for faster convergence
+    // Reduce argument: apply halving a few times for faster convergence.
+    // `threshold` is only used in value comparisons, so its narrow precision is
+    // harmless; `one` participates in arithmetic and must carry guard digits.
     let threshold = make_dbig("0.5").expect("valid literal");
-    let one = make_dbig("1.0").expect("valid literal");
+    let one = dbig_at_precision("1.0", precision);
+    let two = dbig_at_precision("2.0", precision);
 
-    let mut reduced = x.clone();
+    // Extend the input to guard precision so the halving arithmetic below
+    // (`reduced * reduced`, `1 + x^2`, `reduced / (1 + sqrt)`) is performed at
+    // full precision rather than collapsing to the input's narrow precision.
+    let mut reduced = extend_precision(x, precision);
     let mut halvings = 0u32;
 
     while reduced > threshold {
@@ -282,7 +303,7 @@ fn atan_small(x: &DBig, precision: usize) -> DBig {
 
     // Undo halvings: multiply by 2^halvings
     for _ in 0..halvings {
-        result = &result * &make_dbig("2.0").expect("valid literal");
+        result = &result * &two;
     }
 
     result

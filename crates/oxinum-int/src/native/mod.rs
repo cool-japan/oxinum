@@ -44,6 +44,7 @@ mod radix;
 pub mod rand_impl;
 mod roots;
 mod sieve;
+pub(crate) mod simd_ops;
 mod uint;
 
 #[cfg(feature = "num-traits")]

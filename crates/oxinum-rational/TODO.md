@@ -82,7 +82,13 @@ Enriched facade over `dashu-ratio`. Re-exports `RBig`/`Relaxed` (with `BigRation
 
 ## Performance
 - [x] Benchmark GCD-based simplification vs lazy simplification (Relaxed-style)
-- [ ] Profile allocation patterns in continued fraction expansion
+- [x] Profile allocation patterns in continued fraction expansion (planned 2026-06-03)
+  - **Goal:** A report bench (`benches/alloc_profile.rs`, `harness=false`, plain `fn main`) that counts allocations in native `BigRational::{continued_fraction, convergents, best_rational_approximation}` over representative rationals, printing every `AllocStats` field. Also adds a native-vs-dashu baseline group (add/mul) to `benches/rational_arith.rs`.
+  - **Design:** file-local `CountingAlloc` `#[global_allocator]` in the bench binary (legal; bench binaries do NOT inherit the library's `#![forbid(unsafe_code)]`). Atomics track alloc/dealloc calls, cumulative bytes, live bytes, peak bytes; helpers `reset()/snapshot()/measure(||…)`. Test rationals: Fibonacci F(n+1)/F(n) (all-1 CF, long expansion), 355/113 (π convergent), 1457/991, and a large-coefficient rational. Baseline group: oxinum native `BigRational` add/mul vs dashu `RBig::from_parts(IBig,UBig)`. CF has no dashu rational equivalent (dashu-ratio does not expose `continued_fraction`) — documented in the module comment; CF coverage is via alloc-profile only.
+  - **Files:** new `crates/oxinum-rational/benches/alloc_profile.rs`; edit `crates/oxinum-rational/benches/rational_arith.rs`; add `[[bench]] name="alloc_profile" harness=false` to `crates/oxinum-rational/Cargo.toml`. No new external dep (dashu-ratio/int already normal deps).
+  - **Prerequisites:** none.
+  - **Tests:** `cargo bench -p oxinum-rational --no-run`; alloc_profile binary runs and prints.
+  - **Risk:** `make_rat` uses `.expect()` on a known-nonzero denominator — allowed in bench code.
 - [x] Benchmark rational arithmetic chains (matrix operations with exact fractions)
 
 ## Integration
@@ -95,5 +101,6 @@ Enriched facade over `dashu-ratio`. Re-exports `RBig`/`Relaxed` (with `BigRation
   - **Prerequisites:** T2 (exp + ln for pow), N4a/N4b (BigFloat core), N3 (native BigRational).
   - **Tests:** `rational_to_float(1/3, 100).to_f64() ≈ 0.333`; `float_to_rational(BigFloat::from_f64(1.5)?) == BigRational::from_parts(3.into(), 2u8.into())?`; binary-rational round-trip; general rational agrees to prec-2 ULPs after re-conversion.
   - **Risk:** `pow(0,0)` convention (1) and T4 `log_base(base,base)=1` tolerance.
-- [ ] Verify compatibility with SciRS2 exact arithmetic requirements
+- [x] Verify compatibility with SciRS2 exact arithmetic requirements (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_rational_compat.rs` — 14 tests proving `RBig::from_parts`, `.numerator()/.denominator()`, `rational_abs`, `rational_reciprocal`, `to_f64`, and the `to_arbitrary_float` division path all match SciRS2's exact usage; includes the `with_precision` pre-scaling step.
 - [x] Provide re-export path through oxinum facade crate

@@ -242,9 +242,16 @@ pub(crate) fn sincos_impl(
         .with_precision(work_prec, mode)
         .sub_ref_with_mode(&q_bf.mul_ref_with_mode(&pi_over_2, mode), mode);
 
-    // Taylor series for sin(u) and cos(u) at work precision.
-    let sin_u = sin_taylor(&u, work_prec, mode)?;
-    let cos_u = cos_taylor(&u, work_prec, mode)?;
+    // Taylor / binary-splitting series for sin(u) and cos(u) at work precision.
+    // Above BS_THRESHOLD_BITS, the binary-splitting path replaces both Taylor
+    // calls and is strictly faster at high precision.
+    let (sin_u, cos_u) = if prec >= super::bs_transcendental::BS_THRESHOLD_BITS {
+        super::bs_transcendental::sincos_bs(&u, work_prec, mode)?
+    } else {
+        let s = sin_taylor(&u, work_prec, mode)?;
+        let c = cos_taylor(&u, work_prec, mode)?;
+        (s, c)
+    };
 
     // Apply quadrant table.
     let (sin_x, cos_x) = match quadrant {

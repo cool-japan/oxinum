@@ -11,16 +11,18 @@
 //! Two coexistent type families are intentionally exposed:
 //!
 //! * The crate-root re-exports — `Int`, `Natural`, `Float`, `Rational`,
-//!   `BigInt`, `BigUint`, `DBig`, `RBig`, … — are the dashu-backed default
-//!   and remain the recommended entry point for application code today.
+//!   `Complex`, `BigInt`, `BigUint`, `DBig`, `RBig`, `CBig`, … — are the
+//!   dashu-backed default and remain the recommended entry point for
+//!   application code today.
 //! * [`native`] re-exports the ground-up Pure Rust types
 //!   ([`native::BigUint`], [`native::BigInt`], [`native::BigFloat`],
-//!   [`native::BigRational`]) implemented in `oxinum-int`, `oxinum-float`,
-//!   and `oxinum-rational`. Reach for these when you want zero `dashu`
-//!   dependence, explicit limb / rounding-mode control, or to migrate
-//!   incrementally toward the eventual native default. Use the parallel
-//!   aliases [`native::Int`], [`native::Natural`], [`native::Float`], and
-//!   [`native::Rational`] to mirror the top-level shape.
+//!   [`native::BigRational`], [`native::BigComplex`]) implemented in
+//!   `oxinum-int`, `oxinum-float`, `oxinum-rational`, and `oxinum-complex`.
+//!   Reach for these when you want zero `dashu` dependence, explicit limb /
+//!   rounding-mode control, or to migrate incrementally toward the eventual
+//!   native default. Use the parallel aliases [`native::Int`],
+//!   [`native::Natural`], [`native::Float`], [`native::Rational`], and
+//!   [`native::Complex`] to mirror the top-level shape.
 //!
 //! No type at the crate root is shadowed — the namespaces are disjoint, so
 //! existing code keeps compiling unchanged.
@@ -58,6 +60,8 @@ pub use oxinum_rational::{
     Relaxed,
 };
 
+pub use oxinum_complex::CBig;
+
 /// Rounding modes for arbitrary-precision floating-point operations.
 ///
 /// Re-exported from `oxinum-float` for convenience; mirrors `dashu_float`'s
@@ -81,6 +85,9 @@ pub type Float = oxinum_float::DBig;
 
 /// Arbitrary-precision exact rational number.
 pub type Rational = oxinum_rational::RBig;
+
+/// Arbitrary-precision complex number (decimal-backed, `re + im·i`).
+pub type Complex = oxinum_complex::CBig;
 
 // ---------------------------------------------------------------------------
 // Pure-native (no-dashu) re-exports
@@ -114,6 +121,10 @@ pub mod native {
         MontgomeryContext, KARATSUBA_THRESHOLD, NEWTON_DIV_THRESHOLD,
     };
     pub use oxinum_rational::native::BigRational;
+    // `RoundingMode` is already in scope above via `oxinum_float::native`;
+    // `oxinum_complex::native` re-exports the very same type, so only the
+    // complex type itself is pulled in here to avoid a duplicate import.
+    pub use oxinum_complex::native::BigComplex;
 
     /// Native counterpart of [`oxinum::Int`](crate::Int) (the dashu-backed
     /// default). Alias for [`BigInt`].
@@ -130,6 +141,10 @@ pub mod native {
     /// Native counterpart of [`oxinum::Rational`](crate::Rational). Alias
     /// for [`BigRational`].
     pub type Rational = BigRational;
+
+    /// Native counterpart of [`oxinum::Complex`](crate::Complex). Alias for
+    /// [`BigComplex`].
+    pub type Complex = BigComplex;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +239,25 @@ mod tests {
         assert_eq!(i.to_string(), "42");
         assert_eq!(n.to_string(), "42");
         assert_eq!(r.to_string(), "42");
+    }
+
+    #[test]
+    fn facade_cbig() {
+        // |3 + 4i|^2 = 25 through the crate-root re-export and alias.
+        let z = CBig::from_f64(3.0, 4.0).expect("finite parts");
+        assert_eq!(z.norm_sqr().to_string(), "25");
+        let w: Complex = z.conj();
+        assert_eq!(w.im().to_string(), "-4");
+    }
+
+    #[test]
+    fn facade_native_big_complex() {
+        use native::{BigComplex, BigFloat, RoundingMode};
+        let re = BigFloat::from_i64(3, 64, RoundingMode::HalfEven);
+        let im = BigFloat::from_i64(4, 64, RoundingMode::HalfEven);
+        let z: native::Complex = BigComplex::new(re, im);
+        // norm_sqr = 3^2 + 4^2 = 25.
+        assert_eq!(z.norm_sqr().to_f64().round(), 25.0);
     }
 
     #[test]

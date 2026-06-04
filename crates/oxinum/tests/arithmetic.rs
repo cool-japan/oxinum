@@ -139,3 +139,36 @@ fn dbig_mul_pi_times_two() {
     let two_pi = &pi * &two;
     assert_eq!(two_pi.to_string(), "6.28318530717958647692");
 }
+
+// ── Complex tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn cbig_norm_and_conj() {
+    use oxinum::{CBig, Complex};
+    // |3 + 4i|^2 = 25 and conj(3 + 4i) = 3 - 4i, through the crate-root
+    // re-export and the `Complex` alias.
+    let z = CBig::from_f64(3.0, 4.0).expect("finite parts");
+    assert_eq!(z.norm_sqr().to_string(), "25");
+    let c: Complex = z.conj();
+    assert_eq!(c.re().to_string(), "3");
+    assert_eq!(c.im().to_string(), "-4");
+}
+
+#[test]
+fn cbig_abs_three_four_i() {
+    use oxinum::CBig;
+    // |3 + 4i| = 5 exactly.
+    let z = CBig::from_f64(3.0, 4.0).expect("finite parts");
+    assert_eq!(z.abs(20).expect("magnitude").to_string(), "5");
+}
+
+#[test]
+fn cbig_multiplication() {
+    use oxinum::CBig;
+    // (1 + i)(1 - i) = 1 - i^2 = 2.
+    let a = CBig::from_f64(1.0, 1.0).expect("finite parts");
+    let b = CBig::from_f64(1.0, -1.0).expect("finite parts");
+    let prod = &a * &b;
+    assert_eq!(prod.re().to_string(), "2");
+    assert_eq!(prod.im().to_string(), "0");
+}

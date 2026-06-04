@@ -9,7 +9,7 @@ OxiNum replaces `rug` / GMP / MPFR with a 100 % Pure Rust, Apache-2.0
 licensed implementation built on top of the [`dashu`](https://crates.io/crates/dashu)
 family of crates, augmented with a fully native Pure-Rust arithmetic core.
 
-**Version 0.1.0 — Released 2026-06-01**
+**Version 0.1.1 — Released 2026-06-04**
 
 ---
 
@@ -30,6 +30,7 @@ family of crates, augmented with a fully native Pure-Rust arithmetic core.
 | `oxinum-int`       | Arbitrary-precision integers — dashu re-exports + full native BigUint/BigInt |
 | `oxinum-float`     | Arbitrary-precision floats — dashu re-exports + native BigFloat with transcendentals |
 | `oxinum-rational`  | Exact rationals — dashu re-exports + native BigRational with continued fractions |
+| `oxinum-complex`   | Arbitrary-precision complex — `CBig` over `DBig` + native `BigComplex` over `BigFloat` |
 | `oxinum`           | Facade crate — prelude, constants (π, e, ln 2), parse helpers       |
 
 ---
@@ -40,7 +41,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oxinum = "0.1.0"
+oxinum = "0.1.1"
 ```
 
 ### Integer arithmetic
@@ -132,13 +133,39 @@ assert_eq!(cf, vec![BigInt::from(4i64), BigInt::from(2i64),
 let pi_approx = BigRational::best_rational_approximation(&r, &BigUint::from_u64(113));
 ```
 
+### Complex numbers
+
+```rust
+use oxinum::CBig;
+
+// |3 + 4i| = 5 at 20 significant digits
+let z = CBig::from_f64(3.0, 4.0).expect("finite parts");
+assert_eq!(z.abs(20).expect("magnitude").to_string(), "5");
+
+// exp(iπ) ≈ −1 (Euler's identity)
+let i_pi = CBig::from_imag(oxinum::constants::pi(40)); // 0 + π·i
+let euler = i_pi.exp(30).expect("exp");
+assert!(euler.re().to_string().starts_with("-0.99999999"));
+```
+
+### Native binary-base complex numbers
+
+```rust
+use oxinum::native::{BigComplex, BigFloat, RoundingMode};
+
+let re = BigFloat::from_i64(3, 64, RoundingMode::HalfEven);
+let im = BigFloat::from_i64(4, 64, RoundingMode::HalfEven);
+let z = BigComplex::new(re, im);
+assert_eq!(z.norm_sqr().to_f64(), 25.0); // |3 + 4i|^2 = 25
+```
+
 ---
 
 ## Feature flags
 
 | Feature      | Default | Description                                          |
 |--------------|---------|------------------------------------------------------|
-| `pure`       | yes     | Enables oxinum-int / float / rational sub-crates     |
+| `pure`       | yes     | Enables oxinum-int / float / rational / complex sub-crates |
 | `macros`     | no      | Enables `dashu-macros` literal macros                |
 | `serde`      | no      | Serde serialize/deserialize for all native types     |
 | `num-traits` | no      | `num-traits` compatibility (Zero, One, Signed, etc.) |
@@ -146,7 +173,7 @@ let pi_approx = BigRational::best_rational_approximation(&r, &BigUint::from_u64(
 
 ---
 
-## Implementation status (v0.1.0)
+## Implementation status (v0.1.1)
 
 ### oxinum-core
 - [x] `OxiNumTrait`, `OxiSigned`, `OxiNumError` / `OxiNumResult`
@@ -190,6 +217,16 @@ let pi_approx = BigRational::best_rational_approximation(&r, &BigUint::from_u64(
   - [x] Cross-domain conversions: `BigFloat` ↔ `BigRational` ↔ `BigInt`
 - [x] serde, num-traits features
 
+### oxinum-complex
+- [x] `CBig` — decimal-backed complex (`re`/`im` each a `DBig`)
+  - [x] Construction (`new`/`from_parts`/`from_real`/`from_imag`/`from_f64`), `zero`/`one`/`i`
+  - [x] Arithmetic (`+`/`−`/`×`/`÷`, neg), `conj`, `norm_sqr`
+  - [x] `abs`, `arg`, `exp`, `ln`, `sqrt`, `pow` (principal branches)
+  - [x] Complex `sin`/`cos`/`tan`/`sinh`/`cosh`/`tanh`
+  - [x] serde, num-traits features
+- [x] `native::BigComplex` — ground-up binary complex over `native::BigFloat`
+  - [x] Same surface with explicit precision / `RoundingMode` control
+
 ### oxinum (facade)
 - [x] Prelude re-exporting all public types
 - [x] Constants module (π, e, ln 2)
@@ -198,15 +235,15 @@ let pi_approx = BigRational::best_rational_approximation(&r, &BigUint::from_u64(
 - [x] Examples: `high_precision_pi`, `exact_rational_linear_solve`
 
 ### Quality
-- [x] 1282 tests passing (1282/1282), 0 skipped
+- [x] 1749 tests across the workspace, 0 skipped
 - [x] Zero clippy warnings (`-D warnings`, all-targets, all-features)
 - [x] Zero rustdoc warnings
 - [x] `cargo fmt` clean
 - [x] `deny.toml` banning GMP/MPFR/rug crates tree-wide
 - [x] `Dockerfile.ffi-audit` + `scripts/ffi-audit.sh` — FFI-free verification
-- [x] Criterion benchmark harnesses for mul/div/factorial/primality/transcendentals
+- [x] Criterion benchmark harnesses for mul/div/factorial/primality/transcendentals/complex
 - [x] Property-based tests with proptest across all arithmetic laws
-- [x] ~21 000 lines of Rust (111 source files)
+- [x] ~24 000 lines of Rust (137 source files)
 
 ---
 

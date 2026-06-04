@@ -59,6 +59,18 @@ mod trig;
 /// re-exported at the crate root to avoid clashing with the `DBig` alias.
 pub mod native;
 
+/// Special mathematical functions: gamma, ln_gamma, digamma, erf, erfc,
+/// bessel_j0, plus Euler-Mascheroni and Catalan constants.
+pub mod special;
+
+/// `MpFloat` / `MpComplex` adapter types that mirror the `rug::Float` /
+/// `rug::Complex` API.  Drop-in replacements for `rug`-using code.
+pub mod mp_float;
+
 pub use constants::{compute_e, compute_ln2, compute_pi};
 pub use elementary::{exp, ln, pow, sqrt};
+pub use mp_float::{MpComplex, MpFloat, Round};
+pub use special::{
+    bessel_j0, catalan, digamma, erf, erfc, euler_gamma, free_cache, gamma, ln_gamma,
+};
 pub use trig::{atan, atan2, cos, cosh, sin, sinh, tan, tanh};

@@ -1,8 +1,12 @@
 # OxiNum Project TODO
 
-## Status — v0.1.0 released 2026-06-01
+## Status — v0.1.1 released 2026-06-04
 
-Full native Pure-Rust implementation delivered (~21 000 lines Rust, 1282 tests, zero warnings, FFI-audit clean). OxiNum provides: native BigUint/BigInt (schoolbook/Karatsuba/Toom-3/Knuth-D/BPSW), native BigFloat (sqrt/exp/ln/trig/constants via binary-splitting), native BigRational (continued fractions, best-approximation), and a unified facade with prelude/constants/convert/parse. The `dashu-*` crate family remains the production backend; native types coexist and are fully validated against dashu via cross-validation.
+Full native Pure-Rust implementation delivered (~21 000 lines Rust, zero warnings, FFI-audit clean). OxiNum provides: native BigUint/BigInt (schoolbook/Karatsuba/Toom-3/Knuth-D/BPSW), native BigFloat (sqrt/exp/ln/trig/constants via binary-splitting), native BigRational (continued fractions, best-approximation), arbitrary-precision complex (`oxinum-complex`: `CBig` over `DBig` and native `BigComplex` over `BigFloat`), and a unified facade with prelude/constants/convert/parse. The `dashu-*` crate family remains the production backend; native types coexist and are fully validated against dashu via cross-validation.
+
+### Unreleased
+- [x] **`oxinum-complex` crate delivered** — `CBig` (decimal-backed, `re`/`im` each a `DBig`) plus ground-up `native::BigComplex` (binary, over `native::BigFloat`): construction, arithmetic, `conj`/`norm_sqr`, `abs`/`arg`, `exp`/`ln`/`sqrt`/`pow`, complex `sin`/`cos`/`tan`/`sinh`/`cosh`/`tanh`, serde + num-traits. Integrated into the `oxinum` facade as `oxinum::CBig`/`Complex` and `oxinum::native::BigComplex`.
+- [x] **Fixed** precision-collapse defect in `oxinum-float` `atan`/`atan2` (DBig free functions) — accuracy was capped at ~3e-3 regardless of requested precision; now accurate to full precision.
 
 ## Milestones
 
@@ -66,15 +70,19 @@ _Note: Phases 1-7 describe native limb-level math (replacing the dashu backend) 
 - [x] Float precision assertions (200-digit constants; sin/cos to 25+ digits)
 
 ## Performance
-- [ ] Establish benchmark baselines against dashu, num-bigint, rug
-- [ ] Optimize limb layout for cache-friendly access patterns
-- [ ] Investigate SIMD-accelerated limb arithmetic (feature-gated)
+- [x] Establish benchmark baselines against dashu, num-bigint (rug intentionally excluded — banned by deny.toml / Pure-Rust policy: GMP/MPFR C deps)
+- [x] Optimize limb layout for cache-friendly access patterns (delivered 2026-06-03)
+  - **Delivered:** `normalize()` rewritten with `rposition`+`truncate` (O(1) bulk removal vs repeated `pop()`); `add_ref` and `checked_sub` restructured into two sequential passes (overlap + tail) eliminating per-iteration branch; `shl_bits` pre-allocates exact capacity; `from_le_limbs_with_capacity` and `compact()` methods added; 10 new pinned tests verify correctness of optimizations.
+- [x] Investigate SIMD-accelerated limb arithmetic (feature-gated) (SIMD ops delivered in oxinum-int as `simd_ops.rs` + optional `simd` feature with nightly `portable_simd` — see `crates/oxinum-int/TODO.md` for details)
 - [x] Benchmark Karatsuba crossover point vs schoolbook
 
 ## Integration
-- [ ] Coordinate with SciRS2 for numeric type requirements
+- [x] Coordinate with SciRS2 for numeric type requirements (verified 2026-06-03)
+  - **Delivered:** `scirs2-core/src/numeric/arbitrary_precision.rs` already imports and uses `oxinum_int`, `oxinum_float`, `oxinum_rational`, `oxinum_complex` directly. Compatibility verification tests added: `crates/oxinum-core/tests/scirs2_trait_hierarchy_compat.rs`, `crates/oxinum-int/tests/scirs2_int_compat.rs`, `crates/oxinum-float/tests/scirs2_float_compat.rs`, `crates/oxinum-rational/tests/scirs2_rational_compat.rs`. All 1749 tests pass, zero warnings.
 - [ ] Coordinate with OxiBLAS for arbitrary-precision matrix support
-- [ ] Ensure smooth migration path from dashu re-exports to native types
+  - **Blocked (2026-06-03):** OxiBLAS (`~/work/oxiblas`) currently has no `oxinum` dependency. All numeric operations in OxiBLAS use `f64`/`f32`. Coordination requires: (1) OxiBLAS team adds `oxinum` as an optional feature-gated dep, (2) design of `ArbitraryMatrix<T>` where `T: OxiNum` trait. This is a cross-project decision outside the scope of this run.
+- [x] Ensure smooth migration path from dashu re-exports to native types (verified 2026-06-03)
+  - **Delivered:** `crates/oxinum/tests/scirs2_facade_compat.rs` contains `mod dashu_drop_in` proving that projects using dashu directly can switch to `oxinum` re-exports (IBig, UBig, DBig, RBig) with no behavioral change. The `oxinum::native::*` namespace provides native replacements under a parallel API. See the facade rustdoc for the migration guide.
 - [x] Worked examples: high-precision pi, exact rational linear solve (planned 2026-05-28; covered by Item 5)
 
 ## Planned (2026-05-28)

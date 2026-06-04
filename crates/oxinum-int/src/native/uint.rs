@@ -131,7 +131,58 @@ impl BigUint {
     pub fn from_le_limbs(limbs: &[u64]) -> Self {
         let mut v = limbs.to_vec();
         normalize(&mut v);
+        // Shrink excess capacity created by trailing-zero removal so that the
+        // returned value has minimal heap footprint (cache-line friendly).
+        v.shrink_to_fit();
         Self { limbs: v }
+    }
+
+    /// Construct from little-endian limbs while reserving `extra_capacity`
+    /// additional limb slots.
+    ///
+    /// Use this when the caller knows the value will grow (e.g. during an
+    /// add loop) to avoid repeated reallocations while keeping contiguous
+    /// memory access.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use oxinum_int::native::BigUint;
+    /// // Construct a 1-limb value with room for 4 more limbs.
+    /// let n = BigUint::from_le_limbs_with_capacity(&[42], 4);
+    /// assert_eq!(n, BigUint::from_u64(42));
+    /// ```
+    pub fn from_le_limbs_with_capacity(limbs: &[u64], extra_capacity: usize) -> Self {
+        // Compute the normalized length first so we can reserve exactly right.
+        let sig_len = limbs
+            .iter()
+            .rposition(|&x| x != 0)
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        let mut v = Vec::with_capacity(sig_len + extra_capacity);
+        v.extend_from_slice(&limbs[..sig_len]);
+        Self { limbs: v }
+    }
+
+    /// Release excess heap capacity, minimizing the memory footprint of this
+    /// value.
+    ///
+    /// After a long chain of arithmetic operations the internal `Vec` may hold
+    /// significantly more capacity than its current length.  `compact()` shrinks
+    /// the allocation to the exact size needed.  This is a cache-friendly hint:
+    /// a compacted `BigUint` fits into fewer cache lines during iteration.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use oxinum_int::native::BigUint;
+    /// let mut n = BigUint::from_u64(42);
+    /// n.compact();
+    /// assert_eq!(n, BigUint::from_u64(42));
+    /// ```
+    #[inline]
+    pub fn compact(&mut self) {
+        self.limbs.shrink_to_fit();
     }
 
     /// Returns the raw little-endian limbs (no trailing zeros).
@@ -388,31 +439,49 @@ impl BigUint {
     // -----------------------------------------------------------------------
 
     /// Add two `BigUint`s. Always succeeds.
+    ///
+    /// Structured as two sequential passes for cache-friendly linear access:
+    ///
+    /// 1. Overlap region: add limbs from both operands.
+    /// 2. Tail of the longer operand: propagate carry only.
+    ///
+    /// This avoids the per-iteration branch `if i < short.limbs.len()`.
     pub(crate) fn add_ref(a: &BigUint, b: &BigUint) -> BigUint {
-        // Ensure `a` is the longer (without cloning if possible).
+        // Ensure `long` is the longer of the two for sequential tail processing.
         let (long, short) = if a.limbs.len() >= b.limbs.len() {
-            (a, b)
+            (&a.limbs, &b.limbs)
         } else {
-            (b, a)
+            (&b.limbs, &a.limbs)
         };
-        let mut out: Vec<u64> = Vec::with_capacity(long.limbs.len() + 1);
+        // Exact capacity: at most one carry limb beyond the longer operand.
+        let mut out: Vec<u64> = Vec::with_capacity(long.len() + 1);
+
+        // Pass 1: overlap region — add corresponding limbs.
         let mut carry: u64 = 0;
-        for i in 0..long.limbs.len() {
-            let lv = long.limbs[i];
-            let sv = if i < short.limbs.len() {
-                short.limbs[i]
-            } else {
-                0
-            };
+        for (&lv, &sv) in long[..short.len()].iter().zip(short.iter()) {
             let (s1, c1) = lv.overflowing_add(sv);
             let (s2, c2) = s1.overflowing_add(carry);
             out.push(s2);
             carry = (c1 as u64) | (c2 as u64);
         }
+
+        // Pass 2: tail of the longer operand — propagate carry.
+        for &lv in &long[short.len()..] {
+            let (s, c) = lv.overflowing_add(carry);
+            out.push(s);
+            carry = c as u64;
+            // Fast-path: once carry is zero, copy remaining limbs verbatim.
+            if carry == 0 {
+                out.extend_from_slice(&long[out.len()..]);
+                // `normalize` is a no-op here (inputs were normalized), but keep
+                // it for safety in case a future caller passes denormalized input.
+                normalize(&mut out);
+                return BigUint { limbs: out };
+            }
+        }
         if carry != 0 {
             out.push(carry);
         }
-        // No trailing zero can appear unless input was already malformed.
         normalize(&mut out);
         BigUint { limbs: out }
     }
@@ -433,19 +502,34 @@ impl BigUint {
             return None;
         }
         // self >= other => no underflow.
+        // Two sequential passes for cache-friendly linear reads:
+        // Pass 1: overlap region — subtract corresponding limbs.
+        // Pass 2: tail of self — propagate borrow only.
         let mut out: Vec<u64> = Vec::with_capacity(self.limbs.len());
         let mut borrow: u64 = 0;
-        for i in 0..self.limbs.len() {
-            let av = self.limbs[i];
-            let bv = if i < other.limbs.len() {
-                other.limbs[i]
-            } else {
-                0
-            };
+
+        // Pass 1: overlap region.
+        for (&av, &bv) in self.limbs[..other.limbs.len()]
+            .iter()
+            .zip(other.limbs.iter())
+        {
             let (d1, b1) = av.overflowing_sub(bv);
             let (d2, b2) = d1.overflowing_sub(borrow);
             out.push(d2);
             borrow = (b1 as u64) | (b2 as u64);
+        }
+
+        // Pass 2: tail of self — propagate borrow.
+        for &av in &self.limbs[other.limbs.len()..] {
+            let (d, b) = av.overflowing_sub(borrow);
+            out.push(d);
+            borrow = b as u64;
+            if borrow == 0 {
+                // No further borrow; copy the remaining limbs verbatim.
+                out.extend_from_slice(&self.limbs[out.len()..]);
+                normalize(&mut out);
+                return Some(BigUint { limbs: out });
+            }
         }
         debug_assert_eq!(borrow, 0, "checked_sub underflow despite cmp guard");
         normalize(&mut out);
@@ -468,19 +552,16 @@ impl BigUint {
         }
         let limb_offset = (n / 64) as usize;
         let bit_offset = (n % 64) as u32;
-        let mut out: Vec<u64> = vec![0u64; limb_offset];
+        // Pre-allocate exact capacity: zero-fill prefix + source limbs + possible
+        // carry limb when bit_offset != 0.  This avoids any reallocation.
+        let capacity = limb_offset + self.limbs.len() + if bit_offset != 0 { 1 } else { 0 };
+        let mut out: Vec<u64> = Vec::with_capacity(capacity);
+        // Extend with `limb_offset` zero limbs (the shifted-out region).
+        out.resize(limb_offset, 0u64);
         if bit_offset == 0 {
             out.extend_from_slice(&self.limbs);
         } else {
-            let mut carry: u64 = 0;
-            for &limb in &self.limbs {
-                let lo = (limb << bit_offset) | carry;
-                carry = limb >> (64 - bit_offset);
-                out.push(lo);
-            }
-            if carry != 0 {
-                out.push(carry);
-            }
+            out.extend(super::simd_ops::shl_within(&self.limbs, bit_offset));
         }
         normalize(&mut out);
         BigUint { limbs: out }
@@ -549,15 +630,7 @@ impl BigUint {
         if bit_offset == 0 {
             out.extend_from_slice(remaining);
         } else {
-            let mut prev_high: u64 = 0;
-            // Process from most-significant to least-significant.
-            for i in (0..remaining.len()).rev() {
-                let cur = remaining[i];
-                let lo = (cur >> bit_offset) | (prev_high << (64 - bit_offset));
-                prev_high = cur & ((1u64 << bit_offset) - 1);
-                out.push(lo);
-            }
-            out.reverse();
+            out.extend(super::simd_ops::shr_within(remaining, bit_offset));
         }
         normalize(&mut out);
         BigUint { limbs: out }
@@ -565,11 +638,19 @@ impl BigUint {
 }
 
 /// Strip trailing-zero limbs. The canonical zero is an empty `Vec`.
+///
+/// Uses `truncate` to remove a bulk suffix of zeros in a single call rather
+/// than repeated `pop()` (both are O(k) for k zeros, but `truncate` avoids
+/// the per-iteration bounds-check branch and is friendlier to the branch
+/// predictor on long zero suffixes).
 #[inline]
 pub(crate) fn normalize(limbs: &mut Vec<u64>) {
-    while limbs.last() == Some(&0) {
-        limbs.pop();
-    }
+    let new_len = limbs
+        .iter()
+        .rposition(|&x| x != 0)
+        .map(|p| p + 1)
+        .unwrap_or(0);
+    limbs.truncate(new_len);
 }
 
 // ---------------------------------------------------------------------------
@@ -669,38 +750,32 @@ impl ShrAssign<u64> for BigUint {
 }
 
 // ---------------------------------------------------------------------------
-// Bitwise AND, OR, XOR — limb-wise, padding shorter with implicit zeros.
+// Bitwise AND, OR, XOR — delegate to simd_ops kernels (scalar fallback on
+// stable, SIMD path on nightly when `--features simd` is passed).
+// Assign variants (BitAndAssign/BitOrAssign/BitXorAssign) live in bitwise.rs.
 // ---------------------------------------------------------------------------
-
-#[inline]
-fn limbwise<F: Fn(u64, u64) -> u64>(a: &BigUint, b: &BigUint, op: F) -> BigUint {
-    let n = a.limbs.len().max(b.limbs.len());
-    let mut out: Vec<u64> = Vec::with_capacity(n);
-    for i in 0..n {
-        let av = a.limbs.get(i).copied().unwrap_or(0);
-        let bv = b.limbs.get(i).copied().unwrap_or(0);
-        out.push(op(av, bv));
-    }
-    normalize(&mut out);
-    BigUint { limbs: out }
-}
 
 impl BitAnd<&BigUint> for &BigUint {
     type Output = BigUint;
+    /// # Examples
+    ///
+    /// ```
+    /// use oxinum_int::native::BigUint;
+    /// let a = BigUint::from_u64(0b1100);
+    /// let b = BigUint::from_u64(0b1010);
+    /// assert_eq!(&a & &b, BigUint::from_u64(0b1000));
+    /// ```
+    #[inline]
     fn bitand(self, rhs: &BigUint) -> BigUint {
-        // AND result is bounded by the shorter operand; iterate to min.
-        let n = self.limbs.len().min(rhs.limbs.len());
-        let mut out: Vec<u64> = Vec::with_capacity(n);
-        for i in 0..n {
-            out.push(self.limbs[i] & rhs.limbs[i]);
+        BigUint {
+            limbs: super::simd_ops::and_limbs(&self.limbs, &rhs.limbs),
         }
-        normalize(&mut out);
-        BigUint { limbs: out }
     }
 }
 
 impl BitAnd<BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitand(self, rhs: BigUint) -> BigUint {
         (&self).bitand(&rhs)
     }
@@ -708,6 +783,7 @@ impl BitAnd<BigUint> for BigUint {
 
 impl BitAnd<&BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitand(self, rhs: &BigUint) -> BigUint {
         (&self).bitand(rhs)
     }
@@ -715,6 +791,7 @@ impl BitAnd<&BigUint> for BigUint {
 
 impl BitAnd<BigUint> for &BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitand(self, rhs: BigUint) -> BigUint {
         self.bitand(&rhs)
     }
@@ -722,13 +799,25 @@ impl BitAnd<BigUint> for &BigUint {
 
 impl BitOr<&BigUint> for &BigUint {
     type Output = BigUint;
+    /// # Examples
+    ///
+    /// ```
+    /// use oxinum_int::native::BigUint;
+    /// let a = BigUint::from_u64(0b1100);
+    /// let b = BigUint::from_u64(0b1010);
+    /// assert_eq!(&a | &b, BigUint::from_u64(0b1110));
+    /// ```
+    #[inline]
     fn bitor(self, rhs: &BigUint) -> BigUint {
-        limbwise(self, rhs, |a, b| a | b)
+        BigUint {
+            limbs: super::simd_ops::or_limbs(&self.limbs, &rhs.limbs),
+        }
     }
 }
 
 impl BitOr<BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitor(self, rhs: BigUint) -> BigUint {
         (&self).bitor(&rhs)
     }
@@ -736,6 +825,7 @@ impl BitOr<BigUint> for BigUint {
 
 impl BitOr<&BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitor(self, rhs: &BigUint) -> BigUint {
         (&self).bitor(rhs)
     }
@@ -743,6 +833,7 @@ impl BitOr<&BigUint> for BigUint {
 
 impl BitOr<BigUint> for &BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitor(self, rhs: BigUint) -> BigUint {
         self.bitor(&rhs)
     }
@@ -750,13 +841,25 @@ impl BitOr<BigUint> for &BigUint {
 
 impl BitXor<&BigUint> for &BigUint {
     type Output = BigUint;
+    /// # Examples
+    ///
+    /// ```
+    /// use oxinum_int::native::BigUint;
+    /// let a = BigUint::from_u64(0b1100);
+    /// let b = BigUint::from_u64(0b1010);
+    /// assert_eq!(&a ^ &b, BigUint::from_u64(0b0110));
+    /// ```
+    #[inline]
     fn bitxor(self, rhs: &BigUint) -> BigUint {
-        limbwise(self, rhs, |a, b| a ^ b)
+        BigUint {
+            limbs: super::simd_ops::xor_limbs(&self.limbs, &rhs.limbs),
+        }
     }
 }
 
 impl BitXor<BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitxor(self, rhs: BigUint) -> BigUint {
         (&self).bitxor(&rhs)
     }
@@ -764,6 +867,7 @@ impl BitXor<BigUint> for BigUint {
 
 impl BitXor<&BigUint> for BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitxor(self, rhs: &BigUint) -> BigUint {
         (&self).bitxor(rhs)
     }
@@ -771,6 +875,7 @@ impl BitXor<&BigUint> for BigUint {
 
 impl BitXor<BigUint> for &BigUint {
     type Output = BigUint;
+    #[inline]
     fn bitxor(self, rhs: BigUint) -> BigUint {
         self.bitxor(&rhs)
     }
@@ -949,5 +1054,100 @@ mod tests {
         assert_eq!(&a & &b, BigUint::from_u64(0b1000));
         assert_eq!(&a | &b, BigUint::from_u64(0b1110));
         assert_eq!(&a ^ &b, BigUint::from_u64(0b0110));
+    }
+
+    // -----------------------------------------------------------------------
+    // Cache-friendly API tests (normalize/compact/from_le_limbs_with_capacity)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn normalize_bulk_truncate_correctness() {
+        // Verify the rposition-based truncate matches old pop-based semantics.
+        let mut v: Vec<u64> = vec![1, 2, 3, 0, 0, 0];
+        normalize(&mut v);
+        assert_eq!(v, vec![1u64, 2, 3]);
+
+        let mut z: Vec<u64> = vec![0, 0, 0];
+        normalize(&mut z);
+        assert!(z.is_empty());
+
+        let mut s: Vec<u64> = vec![42];
+        normalize(&mut s);
+        assert_eq!(s, vec![42u64]);
+    }
+
+    #[test]
+    fn add_two_pass_carries_correctly() {
+        // Multi-limb add that produces a carry into a new limb.
+        let a = BigUint::from_le_limbs(&[u64::MAX, u64::MAX]);
+        let b = BigUint::from_u64(1);
+        let sum = &a + &b;
+        assert_eq!(sum.as_limbs(), &[0u64, 0, 1]);
+    }
+
+    #[test]
+    fn add_fast_path_tail_copy() {
+        // Exercises the early-exit branch when carry becomes zero mid-tail.
+        let a = BigUint::from_le_limbs(&[1, 2, 3, 4, 5]);
+        let b = BigUint::from_le_limbs(&[u64::MAX - 1, 0]);
+        // a + b: limb0 = 1+(2^64-2)=2^64-1 (no carry), then remaining limbs
+        // of a are copied verbatim.
+        let expected = BigUint::from_le_limbs(&[u64::MAX, 2, 3, 4, 5]);
+        assert_eq!(&a + &b, expected);
+    }
+
+    #[test]
+    fn checked_sub_two_pass_borrows_correctly() {
+        // 2^128 - 1 (full multi-limb borrow propagation).
+        let a = BigUint::from_le_limbs(&[0, 0, 1]); // 2^128
+        let b = BigUint::from_u64(1);
+        let diff = a.checked_sub(&b).expect("no underflow");
+        assert_eq!(diff.as_limbs(), &[u64::MAX, u64::MAX]);
+    }
+
+    #[test]
+    fn checked_sub_fast_path_tail_copy() {
+        // Exercises the early-exit when borrow clears mid-tail.
+        let a = BigUint::from_le_limbs(&[5, 100, 100, 100]);
+        let b = BigUint::from_le_limbs(&[3, 100]);
+        // limb0=5-3=2 (no borrow), limb1=100-100=0 (no borrow) → tail copied.
+        let expected = BigUint::from_le_limbs(&[2, 0, 100, 100]);
+        assert_eq!(a.checked_sub(&b).expect("no underflow"), expected);
+    }
+
+    #[test]
+    fn from_le_limbs_with_capacity_value_correct() {
+        let n = BigUint::from_le_limbs_with_capacity(&[42, 0, 0], 4);
+        assert_eq!(n, BigUint::from_u64(42));
+    }
+
+    #[test]
+    fn from_le_limbs_with_capacity_zero_input() {
+        let n = BigUint::from_le_limbs_with_capacity(&[0, 0], 8);
+        assert!(n.is_zero());
+    }
+
+    #[test]
+    fn from_le_limbs_with_capacity_multidigit() {
+        let n = BigUint::from_le_limbs_with_capacity(&[1, 2, 3], 2);
+        assert_eq!(n.as_limbs(), &[1u64, 2, 3]);
+    }
+
+    #[test]
+    fn compact_preserves_value() {
+        let mut n = BigUint::from_le_limbs_with_capacity(&[0xDEAD, 0xBEEF], 100);
+        let before = n.clone();
+        n.compact();
+        assert_eq!(n, before, "compact() must not change value");
+    }
+
+    #[test]
+    fn shl_bits_pre_alloc_no_realloc() {
+        // Verify correctness of the pre-allocated shl_bits path (functional check).
+        let n = BigUint::from_u64(1);
+        let s = n.shl_bits(127);
+        // 2^127 should have bit 127 set.
+        assert!(s.test_bit(127));
+        assert_eq!(s.bit_length(), 128);
     }
 }

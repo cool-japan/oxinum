@@ -129,11 +129,24 @@ Enriched facade over `dashu-int`. Provides `BigInt`/`BigUint` aliases (`IBig`/`U
 - [x] Benchmark Karatsuba crossover point (schoolbook vs Karatsuba vs Toom-Cook)
 - [x] Benchmark modular exponentiation vs dashu baseline
 - [x] Benchmark GCD (binary vs Lehmer) for various input sizes
-- [ ] Profile memory allocation patterns in multiplication chains
-- [ ] Consider SIMD-accelerated limb arithmetic via `std::simd` (nightly feature gate)
+- [x] Profile memory allocation patterns in multiplication chains (planned 2026-06-03)
+  - **Goal:** A report bench (`benches/alloc_profile.rs`, `harness=false`, plain `fn main`) that counts allocations in native big-integer multiplication across all three tiers (schoolbook / Karatsuba / Toom-3), for a single multiply and a 16-step chained product, printing every `AllocStats` field.
+  - **Design:** file-local `CountingAlloc` `#[global_allocator]` in the bench binary (legal; bench binaries do NOT inherit the library's `#![forbid(unsafe_code)]`). Atomics track alloc/dealloc calls, cumulative bytes, live bytes, peak bytes; helpers `reset()/snapshot()/measure(||…)`. Tier sizes: {8,64,200,1000} limbs (schoolbook <32, Karatsuba 32..~100, Toom-3 ≥100; large Toom-3 case). Also extends `benches/mul.rs` and `benches/div.rs` with competitive baseline groups (oxinum native vs dashu `UBig::from_words` vs num-bigint `from_bytes_le`) at tiers {8,32,100,400} and divrem sizes spanning both algorithms.
+  - **Files:** new `crates/oxinum-int/benches/alloc_profile.rs`; edit `crates/oxinum-int/benches/{mul.rs,div.rs}`; `crates/oxinum-int/Cargo.toml` adds `num-bigint = "0.4.6"` (dev-only, Pure Rust, latest stable) and `[[bench]] name="alloc_profile" harness=false`. dashu-int already a normal dep — no dev-dep needed.
+  - **Prerequisites:** none (all mul tiers + divrem already implemented).
+  - **Tests:** `cargo bench -p oxinum-int --no-run`; alloc_profile binary runs and prints.
+  - **Risk:** closure unused-input warnings → use `|bch, _|`; `UBig::from_words` relies on Word=u64 (64-bit targets only — the only supported targets).
+- [x] Consider SIMD-accelerated limb arithmetic via `std::simd` (nightly feature gate) (planned 2026-06-03)
+  - **Goal:** `native::BigUint` gains public `BitAnd`/`BitOr`/`BitXor` ops (+ assign variants), and `shl_bits`/`shr_bits` gain a SIMD inner kernel. A `simd` Cargo feature opts in; `build.rs` activates `portable_simd` only on nightly, keeping stable CI green with a bit-identical scalar fallback.
+  - **Design:** `build.rs` channel-detector emits `cargo:rustc-cfg=oxinum_simd` only when `simd` feature is on **and** compiler is nightly; `#![cfg_attr(oxinum_simd, feature(portable_simd))]` in `lib.rs` (above existing `#![forbid(unsafe_code)]`). New `src/native/simd_ops.rs`: `and_limbs/or_limbs/xor_limbs(a,b)→Vec<u64>` (AND: min-length, OR/XOR: max-length + normalize); `shl_within/shr_within(limbs, bit_offset: u32)` SIMD inner kernels (shl: `out[i]=(a[i]<<s)|(a[i-1]>>(64-s))`; shr: mirror), via two overlapping `Simd<u64,4>` windows + scalar boundary lanes. `#![forbid(unsafe_code)]` stays. `native::BigUint` gains bitwise impls in `bitwise.rs` calling `simd_ops`. `shl_bits`/`shr_bits` delegate sub-limb branch. Note: multiply/add deliberately excluded — `portable_simd` lacks u64→u128 widening multiply; documented.
+  - **Files:** new `build.rs`, `src/native/simd_ops.rs`, `benches/bitops.rs`; modify `src/lib.rs`, `src/native/mod.rs`, `src/native/uint.rs`, `src/native/bitwise.rs`, `Cargo.toml`, `TODO.md`.
+  - **Prerequisites:** native BigUint bitwise ops (AND/OR/XOR on `BigUint`) don't yet exist → implement as part of this item.
+  - **Tests:** AND/OR/XOR vs dashu `UBig` oracle (proptest + edge cases: unequal lengths, `a^a==0`, `a&0==0`, `a|0==a`, normalization, zero). `shl_bits`/`shr_bits` vs dashu `<<`/`>>` proptest. Round-trip `(x<<k)>>k==x`. Same tests run on stable (scalar path) and nightly (SIMD path) — bit-identical results guaranteed.
+  - **Risk:** `--all-features` on stable kept silent via cfg-decoupling (gate on `oxinum_simd` cfg, not the `simd` feature); `unexpected_cfgs` silenced by unconditional `rustc-check-cfg`; XOR/AND trailing-zero normalization via explicit `normalize()`; shift boundary handled with scalar fallback for boundary lanes.
 
 ## Integration
 - [x] Ensure oxinum-rational uses oxinum-int's BigInt/BigUint for numerator/denominator
 - [x] Ensure oxinum-float uses oxinum-int's BigUint for mantissa storage
-- [ ] Verify API compatibility with SciRS2 integer needs (matrix determinants, polynomial roots)
+- [x] Verify API compatibility with SciRS2 integer needs (matrix determinants, polynomial roots) (verified 2026-06-03)
+  - **Delivered:** `tests/scirs2_int_compat.rs` — 20 tests proving `IBig`, `UBig`, `is_prime`, `ibig_from_radix`, `factorial`, `binomial`, `Gcd`, `mod_pow` match SciRS2's exact call sites and return correct results; includes Fermat's little theorem, Carmichael composites, and the full `mod_pow` helper path.
 - [x] Provide re-export path through oxinum facade crate

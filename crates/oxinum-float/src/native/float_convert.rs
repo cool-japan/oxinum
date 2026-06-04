@@ -389,9 +389,29 @@ impl BigFloat {
             let bits_out = (sign_bit << 63) | (biased_exp << 52) | fraction;
             f64::from_bits(bits_out)
         } else {
-            // Subnormal. The integer mantissa IS the fraction. mantissa_full
-            // has `new_top + 1075` bits, which fits in the 52 fraction bits.
-            let fraction = mantissa_full & ((1u64 << 52) - 1);
+            // Subnormal.  A subnormal f64 stores the value as  `fraction * 2^-1074`
+            // where `fraction` is the raw 52-bit significand integer.  After
+            // rounding, the rounded mantissa has value
+            //   `mantissa_full * 2^(new_top - (new_bits as i64 - 1))`
+            // Setting that equal to `fraction * 2^-1074` gives:
+            //   fraction = mantissa_full << (new_top - (new_bits as i64 - 1) + 1074)
+            //
+            // When no carry occurred the shift is 0 and `fraction == mantissa_full`.
+            // When rounding carries up (e.g., 1.8 * 2^-1074 → 1 * 2^-1073),
+            // new_top rises by 1 and the shift is 1, so fraction == mantissa_full << 1.
+            let shift = new_top - (new_bits as i64 - 1) + 1074;
+            // shift is in [0, 1] for well-formed subnormal inputs; guard with
+            // a saturating clamp to avoid UB in case of any edge case.
+            let fraction = if shift <= 0 {
+                mantissa_full
+            } else if shift < 52 {
+                mantissa_full << shift as u64
+            } else {
+                // Overflow into normal territory — shouldn't happen after the
+                // new_top >= -1022 guard above, but be defensive.
+                mantissa_full
+            };
+            let fraction = fraction & ((1u64 << 52) - 1);
             let bits_out = (sign_bit << 63) | fraction;
             f64::from_bits(bits_out)
         }
