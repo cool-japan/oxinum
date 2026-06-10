@@ -1,6 +1,6 @@
 # OxiNum Project TODO
 
-## Status — v0.1.1 released 2026-06-04
+## Status — v0.1.2 released 2026-06-10
 
 Full native Pure-Rust implementation delivered (~21 000 lines Rust, zero warnings, FFI-audit clean). OxiNum provides: native BigUint/BigInt (schoolbook/Karatsuba/Toom-3/Knuth-D/BPSW), native BigFloat (sqrt/exp/ln/trig/constants via binary-splitting), native BigRational (continued fractions, best-approximation), arbitrary-precision complex (`oxinum-complex`: `CBig` over `DBig` and native `BigComplex` over `BigFloat`), and a unified facade with prelude/constants/convert/parse. The `dashu-*` crate family remains the production backend; native types coexist and are fully validated against dashu via cross-validation.
 

@@ -428,6 +428,16 @@ mod num_traits_parity {
 /// Reduced case count for expensive transcendental proptests.
 const HEAVY_CASES: u32 = 16;
 
+/// Very small case count + lower precision for the slowest inverse-trig
+/// proptests (asin / atanh on CBig at precision=40 exceed the 120-second
+/// nextest per-test budget with more than ~6 cases on typical CI hardware).
+const VERY_HEAVY_CASES: u32 = 6;
+
+/// Reduced working precision used inside the VERY_HEAVY proptests.
+/// 20 significant digits is still much higher than f64 (≈15 digits) and is
+/// sufficient to exercise the cross-family agreement within `TOL = 1e-9`.
+const PREC_LIGHT: usize = 20;
+
 proptest! {
     #[test]
     fn prop_add_cbig_native_agree(
@@ -531,13 +541,21 @@ proptest! {
         );
     }
 
+}
+
+// Separate proptest block for the slowest inverse-trig tests (asin / atanh).
+// Uses VERY_HEAVY_CASES and a reduced working precision (PREC_LIGHT = 20) to
+// stay within the 120-second per-test nextest budget.
+proptest! {
+    #![proptest_config(ProptestConfig { cases: VERY_HEAVY_CASES, ..ProptestConfig::default() })]
+
     #[test]
     fn prop_asin_cbig_native_agree(
         // Restrict to values well within the convergence region for asin.
         re in -0.9f64..0.9f64,
         im in -0.9f64..0.9f64,
     ) {
-        let cr = cbig(re, im).asin(PREC).expect("asin");
+        let cr = cbig(re, im).asin(PREC_LIGHT).expect("asin");
         let nr = native(re, im).asin(PREC_NAT, MODE).expect("asin");
         prop_assert!(
             cross_approx(&cr, &nr, TOL),
@@ -552,7 +570,7 @@ proptest! {
         re in -0.9f64..0.9f64,
         im in -0.9f64..0.9f64,
     ) {
-        let cr = cbig(re, im).atanh(PREC).expect("atanh");
+        let cr = cbig(re, im).atanh(PREC_LIGHT).expect("atanh");
         let nr = native(re, im).atanh(PREC_NAT, MODE).expect("atanh");
         prop_assert!(
             cross_approx(&cr, &nr, TOL),

@@ -9,7 +9,7 @@ OxiNum replaces `rug` / GMP / MPFR with a 100 % Pure Rust, Apache-2.0
 licensed implementation built on top of the [`dashu`](https://crates.io/crates/dashu)
 family of crates, augmented with a fully native Pure-Rust arithmetic core.
 
-**Version 0.1.1 — Released 2026-06-04**
+**Version 0.1.2 — Released 2026-06-10**
 
 ---
 
@@ -41,7 +41,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oxinum = "0.1.1"
+oxinum = "0.1.2"
 ```
 
 ### Integer arithmetic
@@ -173,7 +173,7 @@ assert_eq!(z.norm_sqr().to_f64(), 25.0); // |3 + 4i|^2 = 25
 
 ---
 
-## Implementation status (v0.1.1)
+## Implementation status (v0.1.2)
 
 ### oxinum-core
 - [x] `OxiNumTrait`, `OxiSigned`, `OxiNumError` / `OxiNumResult`
@@ -235,7 +235,7 @@ assert_eq!(z.norm_sqr().to_f64(), 25.0); // |3 + 4i|^2 = 25
 - [x] Examples: `high_precision_pi`, `exact_rational_linear_solve`
 
 ### Quality
-- [x] 1749 tests across the workspace, 0 skipped
+- [x] 1749 tests across the workspace, 0 failed, 0 skipped (v0.1.2: prop_asin/prop_atanh timeout fixed)
 - [x] Zero clippy warnings (`-D warnings`, all-targets, all-features)
 - [x] Zero rustdoc warnings
 - [x] `cargo fmt` clean

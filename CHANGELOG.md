@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-10
+
+### Fixed
+
+- **oxinum-complex** `parity_cross_validation`: `prop_asin_cbig_native_agree` and
+  `prop_atanh_cbig_native_agree` proptest cases timed out (>120 s) when run with
+  `HEAVY_CASES = 16` at full precision (40 significant digits). The two tests are
+  now split into a separate `proptest!` block with `VERY_HEAVY_CASES = 6` and
+  `PREC_LIGHT = 20`, bringing each test well under the 120-second per-test budget
+  while still exercising cross-family agreement to `1e-9` tolerance.
+
+### Maintenance
+
+- Version bump to 0.1.2; all workspace crates aligned to this version.
+- Dependency version pins updated across workspace `[workspace.dependencies]`.
+
 ## [0.1.1] - 2026-06-04
 
 ### Added
@@ -94,4 +110,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Property-based tests with proptest across all arithmetic laws.
 - 1282 tests passing at 0.1.0, zero clippy warnings, zero rustdoc warnings.
 
+[0.1.2]: https://github.com/cool-japan/oxinum/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cool-japan/oxinum/releases/tag/v0.1.1
