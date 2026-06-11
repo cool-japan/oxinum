@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.80"
 authors = ["COOLJAPAN OU (Team Kitasan)"]
@@ -19,11 +19,11 @@ repository = "https://github.com/cool-japan/oxinum"
 description = "OxiNum is the COOLJAPAN Pure-Rust arbitrary-precision math layer (GMP/MPFR-free)."
 
 [workspace.dependencies]
-oxinum-core     = { path = "crates/oxinum-core",     version = "0.1.2" }
-oxinum-int      = { path = "crates/oxinum-int",      version = "0.1.2" }
-oxinum-float    = { path = "crates/oxinum-float",    version = "0.1.2" }
-oxinum-rational = { path = "crates/oxinum-rational", version = "0.1.2" }
-oxinum-complex  = { path = "crates/oxinum-complex",  version = "0.1.2" }
+oxinum-core     = { path = "crates/oxinum-core",     version = "0.1.3" }
+oxinum-int      = { path = "crates/oxinum-int",      version = "0.1.3" }
+oxinum-float    = { path = "crates/oxinum-float",    version = "0.1.3" }
+oxinum-rational = { path = "crates/oxinum-rational", version = "0.1.3" }
+oxinum-complex  = { path = "crates/oxinum-complex",  version = "0.1.3" }
 # external — Pure Rust only
 dashu-base   = { version = "0.4" }
 dashu-int    = { version = "0.4" }
